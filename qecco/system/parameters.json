@@ -1,0 +1,64 @@
+{
+    "encoder": {
+        "num_of_layers": [20],
+        "num_of_tests": 1,
+        "opt_algorithm": "LBFGS",
+        "method": "reck",
+        "simple_cost": false,
+        "phi": null,
+        "num_of_evaluations": 1000,
+        "ancillae": [1, 1],
+        "n_photons": 4,
+        "m_modes": 2,
+        "code_name": "n4m2",
+        "gen_encoder_inputs": true,
+
+        "print_every": 10,
+        "verbose": true,
+        "save_data": false
+    },
+
+    "decoder": {
+        "num_of_layers": [180],
+        "num_of_tests": 1,
+        "opt_algorithm": "LBFGS",
+        "method": "reck",
+        "simple_cost": false,
+        "loss_function": "bosonic_density_loss",
+        "loss_kwargs": {
+            "n": 4,
+            "m": 2,
+            "eta": 0.05
+            },
+        "phi": null,
+        "num_of_evaluations": 2000,
+        "ancillae": [1, 1],
+        "n_photons": 4,
+        "m_modes": 2,
+        "code_name": "n4m2",
+        "gen_encoder_inputs": false,
+
+        "print_every": 10,
+        "verbose": true,
+        "save_data": false
+    },
+
+    "qgate": {
+        "num_of_layers": [5],
+        "num_of_tests": 1,
+        "opt_algorithm": "LBFGS",
+        "method": "reck",
+        "simple_cost": false,
+        "phi": null,
+        "num_of_evaluations": 2000,
+        "ancillae": [0],
+        "n_photons": 2,
+        "m_modes": 2,
+        "code_name": "CNOT",
+        "gen_encoder_inputs": true,
+
+        "print_every": 10,
+        "verbose": true,
+        "save_data": false
+    }
+}
