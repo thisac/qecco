@@ -10,7 +10,9 @@ import bosonic as b
 import numpy as np
 
 from .. import utils as u
+from ..utils import timeit
 from .state_set_optimization import optimize_state_set_lossless as opt
+from .state_set_optimization import get_num_phases
 from .encoding import Encoding
 from qecco.utils import print_array as pa
 
@@ -89,7 +91,8 @@ class System:
             "code_name", "gen_encoder_inputs", "print_every", "verbose",
             "save_data", "data_in_lossy_basis", "photonic", "pulse_sequence",
             "fock_basis_length", "m_ancillae", "n_ancillae", "num_phases",
-            "etas", "full_loss", "save_name",
+            "etas", "full_loss", "save_name", "save_folder",
+            "use_last_layer_as_guess",
             ]
 
         for key, value in new_parameters.items():
@@ -171,7 +174,10 @@ class System:
             kwargs: used as inputs into the nlopt optimization, if needed.
         """
         if self.parameters["save_data"]:
-            data_folder = Path("data") / date.today().strftime("%Y%m%d")
+            try:
+                data_folder = Path("data") / date.today().strftime("%Y%m%d") / str(self.parameters["save_folder"])
+            except KeyError:
+                data_folder = Path("data") / date.today().strftime("%Y%m%d")
             if data_folder.exists():
                 print(f"Warning: {data_folder} exists. Data may be overwritten!")
                 input("Press Enter to continue...")
@@ -193,6 +199,12 @@ class System:
         if self.parameters["verbose"]:
             print("\nTime-counter started at: {}".format(datetime.now()))
 
+        all_results = []
+        results = None
+        try:
+            kwargs_guess = kwargs["guess"].copy()
+        except (AttributeError, KeyError):
+            kwargs_guess = None
         for i, layers in enumerate(self.parameters["num_of_layers"]):
             t_layer = time.perf_counter()
             if self.parameters["verbose"]:
@@ -201,11 +213,14 @@ class System:
                 print("| Photons: {}  Modes: {}  Layers: {:3d}  -- {:3d} / {:3d} |".format(self.parameters["n_ancillae"], self.parameters["m_ancillae"], layers, i + 1, len(self.parameters["num_of_layers"])))
                 print("---------------------------------------------------\n")
 
-
             # Backup previous data folder (if it exists).
             if self.parameters["save_data"]:
-                save_path = data_folder / f"{layers:03d}_layers"
-                save_path_old = data_folder / f"{layers:03d}_layers (old)"
+                try:
+                    save_path = data_folder / f"{layers:03d}_layers"
+                    save_path_old = data_folder / f"{layers:03d}_layers (old)"
+                except (KeyError, TypeError):
+                    save_path = data_folder / f"{layers:03d}_layers"
+                    save_path_old = data_folder / f"{layers:03d}_layers (old)"
                 if save_path.exists():
                     if save_path_old.exists():
                         u.remove(save_path_old)
@@ -214,6 +229,17 @@ class System:
             best_error = 1
             best_idx = 0
             best_num_of_evals = None
+
+            if self.parameters["use_last_layer_as_guess"] and i != 0:
+                num_phases = get_num_phases(self, layers, return_val=True)
+                if num_phases < len(results["bestX"]):
+                    kwargs["guess"] = results["bestX"][:num_phases]
+                else:
+                    diff = num_phases - len(results["bestX"])
+                    kwargs["guess"] = np.pad(results["bestX"], (0, diff), constant_values=1)
+
+            elif kwargs_guess is not None:
+                kwargs["guess"] = kwargs_guess[i]
 
             if self.parameters["num_of_tests"] == 0:
                 num_of_tests = 999999
@@ -238,6 +264,7 @@ class System:
                     best_idx = j
                     best_error = results["bestError"]
                     best_num_of_evals = results["numEvaluations"]
+                    best_results = results.copy()
 
                 if self.parameters["verbose"]:
                     print("{:3d}  {:>15}    Min error: {:.2e}\n".format(j, results['returnCodeMessage'], results["bestError"]))
@@ -245,10 +272,10 @@ class System:
                 if stop_at_minimum and best_error < 1e-8:
                     num_of_tests = j + 1
                     break
-
+            all_results.append(best_results)
             if self.parameters["save_data"]:
-                pre_best_path = data_folder / f"{layers:03d}_layers" / f"run_{best_idx:03d}"
-                post_best_path = data_folder / f"{layers:03d}_layers" / f"run_{best_idx:03d} (best)"
+                pre_best_path = save_path / f"run_{best_idx:03d}"
+                post_best_path = save_path / f"run_{best_idx:03d} (best)"
                 pre_best_path.rename(post_best_path)
 
             t_mid = time.perf_counter()
@@ -264,7 +291,8 @@ class System:
         if self.parameters["verbose"]:
             print("Total runtime [h:m:s]: {}".format(timedelta(seconds=(t_stop - t_start))))
 
-        self.results = results
+        if len(all_results) == 1: all_results = all_results[0]
+        self.results = all_results
 
     def build_codes(self, code_name=None):
         """Wrapper for the build_bosonic_codes function in the encoding object
@@ -307,6 +335,7 @@ class System:
             print("Density matrices are ready!")
         return self
 
+    # @timeit
     def apply_loss(self, rho=None, verbose=True, loss_function=None, **loss_kwargs):
         """Wrapper for the apply loss functions in the encoding object
 
@@ -327,6 +356,8 @@ class System:
                 print("Using default loss type")
             loss_function = self.loss_functions[str(self.parameters["loss_function"])]
             loss_kwargs = self.parameters["loss_kwargs"]
+            print(loss_kwargs)
+            print(loss_kwargs["n"])
 
         if rho is not None:
             rho_lossy = self.encoding.apply_loss_to_single_rho(
@@ -355,7 +386,7 @@ class System:
                 print("The lost photons are back!")
         return self
 
-    def update_parameters(self, parameters, set_default=False):
+    def update_parameters(self, parameters, set_default=False, print_parameters=True):
         """ Update parameters in System
 
         Parameters:
@@ -364,7 +395,7 @@ class System:
                 their default values (True) or keep them as they are (False)
         """
         self.encoding.reset()
-        self._set_parameters(parameters, set_default)
+        self._set_parameters(parameters, set_default, print_parameters)
         return self
 
     def update_targets(self, new_targets):
