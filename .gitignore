@@ -6,6 +6,7 @@ snapshots/
 data/
 .old_files/
 .fish*
+*~
 
 ### JupyterNotebook ###
 .ipynb_checkpoints
