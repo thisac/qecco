@@ -1,5 +1,7 @@
 from pathlib import Path
+from scipy.stats import ortho_group
 # import warnings
+import time
 
 import numpy as np
 import bosonic as b
@@ -94,7 +96,10 @@ def load_dict(load_path):
     data_dict = {}
 
     for child in load_path.iterdir():
-        value = np.load(child, allow_pickle=True)
+        try:
+            value = np.load(child, allow_pickle=True).item()
+        except ValueError:
+            value = np.load(child, allow_pickle=True)
         key = child.stem
         data_dict[key] = value
 
@@ -168,35 +173,47 @@ def load_data(folder_name, build_S=False):
 
     layers = [el["num_of_layers"] for el in parameters_list]
     error_arrays = [
-        np.load(el) for el in find_folder(data_directory, "errorArray")
+        np.load(el) for el in find_folder(data_directory, "errorArray.npy")
         if s in str(el) and "(old)" not in str(el) and "pre" not in str(el)
         ]
     run_times = [
-        np.load(el) for el in find_folder(data_directory, "runTime")
+        np.load(el).item() for el in find_folder(data_directory, "runTime.npy")
         if s in str(el) and "(old)" not in str(el) and "pre" not in str(el)
         ]
     best_errors = [
-        np.load(el) for el in find_folder(data_directory, "bestError")
+        np.load(el).item() for el in find_folder(data_directory, "bestError.npy")
+        if s in str(el) and "(old)" not in str(el) and "pre" not in str(el)
+        ]
+    fidelity = [
+        np.load(el).item() for el in find_folder(data_directory, "fidelity.npy")
+        if s in str(el) and "(old)" not in str(el) and "pre" not in str(el)
+        ]
+    guess = [
+        np.load(el) for el in find_folder(data_directory, "guess.npy")
         if s in str(el) and "(old)" not in str(el) and "pre" not in str(el)
         ]
     best_x = [
-        np.load(el) for el in find_folder(data_directory, "bestX")
+        np.load(el) for el in find_folder(data_directory, "bestX.npy")
+        if s in str(el) and "(old)" not in str(el) and "pre" not in str(el)
+        ]
+    best_xs = [
+        np.load(el) for el in find_folder(data_directory, "bestXs.npy")
         if s in str(el) and "(old)" not in str(el) and "pre" not in str(el)
         ]
     evaluations = [
-        np.load(el) for el in find_folder(data_directory, "numEvaluations")
+        np.load(el).item() for el in find_folder(data_directory, "numEvaluations.npy")
         if s in str(el) and "(old)" not in str(el) and "pre" not in str(el)
         ]
     folder_name = [
-        el.parent for el in find_folder(data_directory, "bestX")
+        el.parent for el in find_folder(data_directory, "bestX.npy")
         if s in str(el) and "(old)" not in str(el) and "pre" not in str(el)
         ]
     inputs = [
-        np.load(el) for el in find_folder(data_directory, "start_inputs")
+        np.load(el) for el in find_folder(data_directory, "start_inputs.npy")
         if "(old)" not in str(el)
         ]
     targets = [
-        np.load(el) for el in find_folder(data_directory, "start_targets")
+        np.load(el) for el in find_folder(data_directory, "start_targets.npy")
         if "(old)" not in str(el)
         ]
 
@@ -275,7 +292,10 @@ def load_data(folder_name, build_S=False):
         "error_arrays": error_arrays,
         "run_times": run_times,
         "best_errors": best_errors,
+        "fidelity": fidelity,
+        "guess": guess,
         "best_x": best_x,
+        "best_xs": best_xs,
         "evaluations": evaluations,
         "best_S": best_S,
         "folder_name": folder_name,
@@ -319,3 +339,51 @@ def array_assignment(mat, mini_mat, pos):
         new_mat.append(new_row)
 
     return np.array(new_mat)
+
+
+def generate_orth(n, dim):
+    ortho_mat = ortho_group.rvs(dim=dim)
+    random_targets = []
+    rand_pure = []
+    rand_1 = ortho_mat.T[0].reshape(-1, 1)
+    rand_2 = ortho_mat.T[1].reshape(-1, 1)
+    # For random, non-orthogonal rhos
+    # rand_1 = (2 * np.random.random(dim) - 1).reshape(-1, 1)
+    # rand_2 = (2 * np.random.random(dim) - 1).reshape(-1, 1)
+    rand_pure.append(rand_1)
+    rand_pure.append(rand_2)
+    rand_pure.append((rand_1 + rand_2) / np.sqrt(2))
+    rand_pure.append((rand_1 - rand_2) / np.sqrt(2))
+    rand_pure.append((rand_1 + 1j * rand_2) / np.sqrt(2))
+    rand_pure.append((rand_1 - 1j * rand_2) / np.sqrt(2))
+
+    for rp in rand_pure:
+        rand_mat = rp @ np.conj(rp).T
+
+        # new_vec = (
+        #     2 * np.random.random((1, rand_mat.shape[0])) - 1
+        #     + (2 * np.random.random((1, rand_mat.shape[0])) - 1) * 1j
+        #     )
+        # rand_mat = (
+        #     rand_mat + (np.conj(new_vec.T) @ new_vec)
+        #     * 100
+        #     )
+
+        rand_rho = rand_mat / np.trace(rand_mat)
+
+        random_targets.append(rand_rho)
+    return random_targets
+
+
+def timeit(method):
+    def timed(*args, **kwargs):
+        ts = time.time()
+        result = method(*args, **kwargs)
+        te = time.time()
+        if 'log_time' in kwargs:
+            name = kwargs.get('log_name', method.__name__.upper())
+            kwargs['log_time'][name] = int((te - ts) * 1000)
+        else:
+            print(f"{method.__name__}  {(te - ts) * 1000:2.2f} ms")
+        return result
+    return timed
