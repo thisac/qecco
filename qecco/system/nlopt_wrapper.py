@@ -125,6 +125,12 @@ Results dictionary keys:
     opt.set_lower_bounds(lowerBounds)
     opt.set_upper_bounds(upperBounds)
 
+    # If using global optimizer
+    local_opt = nlopt.opt(nlopt.LD_LBFGS, N)
+    local_opt.set_ftol_rel(kwargs['ftolRel'])
+    local_opt.set_xtol_rel(kwargs['xtolRel'])
+    opt.set_local_optimizer(local_opt)
+
     # Set options using kwargs
     # First, set some defaults
     trackErrors = True
@@ -202,6 +208,7 @@ Results dictionary keys:
         global lastBestX
 
         errors = []
+        bestXs = []
         if minimize:
             minError = np.inf
         else:
@@ -218,6 +225,7 @@ Results dictionary keys:
             numEvaluations += 1
             if (minimize and (error < minError)) or (not(minimize) and (error > minError)):
                 errors.append([numEvaluations, error])
+                bestXs.append(x.copy())
                 minError = error
                 lastBestX = x
             if printEvery is not None:
@@ -261,8 +269,8 @@ Results dictionary keys:
     # Catch possible errors and save the nlopt website's description of them
     except RuntimeError:
         caughtError = "RuntimeError: Generic Failure"
-    except ValueError:
-        caughtError = "ValueError: Invalid arguments (e.g. lower bounds are bigger than upper bounds, an unknown algorithm was specified, etcetera)"
+    # except ValueError:
+    #     caughtError = "ValueError: Invalid arguments (e.g. lower bounds are bigger than upper bounds, an unknown algorithm was specified, etcetera)"
     except MemoryError:
         caughtError = "MemoryError: Ran out of memory (a memory allocation failed)"
     except nlopt.RoundoffLimited:
@@ -292,6 +300,7 @@ Results dictionary keys:
         'guess': guess,
 
         'bestX': bestX,
+        'bestXs': np.array(bestXs),
         'bestError': bestError,
         'returnCode': returnCode,
         'returnCodeMessage': returnCodeMessage,

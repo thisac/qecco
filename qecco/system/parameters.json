@@ -7,11 +7,12 @@
         "simple_cost": false,
         "phi": null,
         "num_of_evaluations": 1000,
-        "ancillae": [1, 1],
+        "ancillae": [0],
         "n_photons": 4,
         "m_modes": 2,
         "code_name": "n4m2",
         "gen_encoder_inputs": true,
+        "use_last_layer_as_guess": false,
 
         "print_every": 10,
         "verbose": true,
@@ -29,7 +30,7 @@
             "n": 4,
             "m": 2,
             "eta": 0.05
-            },
+        },
         "phi": null,
         "num_of_evaluations": 2000,
         "ancillae": [1, 1],
@@ -37,6 +38,7 @@
         "m_modes": 2,
         "code_name": "n4m2",
         "gen_encoder_inputs": false,
+        "use_last_layer_as_guess": false,
 
         "print_every": 10,
         "verbose": true,
@@ -56,6 +58,7 @@
         "m_modes": 2,
         "code_name": "CNOT",
         "gen_encoder_inputs": true,
+        "use_last_layer_as_guess": false,
 
         "print_every": 10,
         "verbose": true,

@@ -362,6 +362,22 @@ class Encoding():
         return new_lossless
 
     def lossless_to_targets(self, rho_lossless):
+        """ Transforms lossy density matrices to target density matrices
+
+        Takes a lossless density matrix (in the lossy fock basis) and deletes
+        the modes one by one, starting with the last one, including the photons
+        in it. It then discards all states that do not have the desired target
+        photon number. If the discarded modes contains entangled photons, the
+        resulting target density matrices will have a trace != 1.
+
+        Parameters:
+            rho_lossless ([[complex]]): input density matrix in the lossy fock
+                basis with ancillae (n_an, m_an)
+
+        Returns:
+            rho_lossless ([[complex]]): target density matrix in the lossless
+                fock basis without ancillae (n, m)
+        """
         n_an = int(self.n_photons + np.sum(self.ancillae))
         m_an = int(self.m_modes + len(self.ancillae))
 

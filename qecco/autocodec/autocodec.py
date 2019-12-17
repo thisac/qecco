@@ -1,3 +1,4 @@
+import sys
 import warnings
 from datetime import date
 from pathlib import Path
@@ -25,7 +26,7 @@ class Autocodec:
         save_data (bool): whether to save all data (True) or not (False)
     """
 
-    def __init__(self, encoder, decoder, save_data=False):
+    def __init__(self, encoder, decoder, save_data=False, save_folder=None):
         self.encoder = encoder
         self.decoder = decoder
 
@@ -51,7 +52,10 @@ class Autocodec:
         # NOTE: Has NOT been tested
         # Check if save folder already exists, and prompt if so.
         if self.save_data:
-            self.data_folder = Path("data") / "autocodecs" / date.today().strftime("%Y%m%d")
+            if save_folder:
+                self.data_folder = Path("data") / "autocodecs" / date.today().strftime("%Y%m%d") / save_folder
+            else:
+                self.data_folder = Path("data") / "autocodecs" / date.today().strftime("%Y%m%d")
             if encoder.results and decoder.results:
                 if self.data_folder.exists():
                     print(f"Warning: {self.data_folder} exists. Data may be overwritten!")
@@ -65,10 +69,10 @@ class Autocodec:
     def pre_save(self):
         # Backup previous data folder (if it exists) as "parameters (old)"
         # and save the new parameters as "parameters".
-        save_path_enc = self.data_folder / "parameters_enc"
-        save_path_dec = self.data_folder / "parameters_dec"
-        save_path_enc_old = self.data_folder / "parameters_enc (old)"
-        save_path_dec_old = self.data_folder / "parameters_dec (old)"
+        save_path_enc = self.data_folder / "1_parameters_enc"
+        save_path_dec = self.data_folder / "2_parameters_dec"
+        save_path_enc_old = self.data_folder / "1_parameters_enc (old)"
+        save_path_dec_old = self.data_folder / "2_parameters_dec (old)"
         if save_path_enc.exists():
             if save_path_enc_old.exists():
                 u.remove(save_path_enc_old)
@@ -95,7 +99,7 @@ class Autocodec:
             "start_targets": self.encoding.rhos_targets,
             })
 
-    def pre_optimize(self, pre_opt):
+    def pre_optimize(self, pre_opt, random_targets, **kwargs):
         """ Pre-optimises the encoder and the decoder
 
         Optimizes the encoder and then the decoder depending on their
@@ -142,18 +146,60 @@ class Autocodec:
 
         no_results = True
         while no_results:
-            self.encoder.build_rhos().optimize(maxEval=pre_opt[0])
+            if not random_targets:
+                self.encoder.build_rhos()
+            self.encoder.optimize(maxEval=pre_opt[0], **kwargs)
             if self.encoder.results["returnCodeMessage"] != "Generic failure":
                 no_results = False
 
-        if self.encoder.parameters["verbose"]:
-            print("\nLogical 0 start target:")
-            pa(self.encoder.get_output()[0])
-            print("\nLogical 1 start target:")
-            pa(self.encoder.get_output()[1])
-
         self.encoding.rhos_inputs = np.copy(self.encoder.encoding.rhos_inputs)
         new_targets = self.encoder.get_output()
+
+        if self.encoder.parameters["verbose"]:
+            print("\nLogical 0 pre-opt target:")
+            pa(new_targets[0])
+            print("\nLogical 1 pre-opt target:")
+            pa(new_targets[1])
+
+            print("\nTrace of logical 0:")
+            print(np.trace(new_targets[0]))
+            print("\nTrace of logical 1:")
+            print(np.trace(new_targets[1]))
+            print("\nOrthogonality between L0 and L1 (should be 0):")
+            print(np.trace(new_targets[0] @ new_targets[1]))
+            print("\nOrthogonality between L2 and L3 (should be close to 0):")
+            print(np.trace(new_targets[2] @ new_targets[3]))
+            print("\nOrthogonality between L4 and L5 (should be close to 0):")
+            print(np.trace(new_targets[4] @ new_targets[5]))
+
+            # print("\nOrthogonality between L1 and L2 (should be close to 0.5):")
+            # print(np.trace(new_targets[1] @ new_targets[2]))
+            # print("\nOrthogonality between L3 and L4 (should be close to 0.5):")
+            # print(np.trace(new_targets[3] @ new_targets[4]))
+            # print("\nOrthogonality between L0 and L2 (should be close to 0.5):")
+            # print(np.trace(new_targets[0] @ new_targets[2]))
+            # print("\nOrthogonality between L1 and L3 (should be close to 0.5):")
+            # print(np.trace(new_targets[1] @ new_targets[3]))
+            # print("\nOrthogonality between L2 and L4 (should be close to 0.5):")
+            # print(np.trace(new_targets[2] @ new_targets[4]))
+            # print("\nOrthogonality between L3 and L5 (should be close to 0.5):")
+            # print(np.trace(new_targets[3] @ new_targets[5]))
+            # print("\nOrthogonality between L0 and L3 (should be close to 0.5):")
+            # print(np.trace(new_targets[0] @ new_targets[3]))
+            # print("\nOrthogonality between L1 and L4 (should be close to 0.5):")
+            # print(np.trace(new_targets[1] @ new_targets[4]))
+            # print("\nOrthogonality between L2 and L5 (should be close to 0.5):")
+            # print(np.trace(new_targets[2] @ new_targets[5]))
+            # print("\nOrthogonality between L0 and L4 (should be close to 0.5):")
+            # print(np.trace(new_targets[0] @ new_targets[4]))
+            # print("\nOrthogonality between L1 and L5 (should be close to 0.5):")
+            # print(np.trace(new_targets[1] @ new_targets[5]))
+            # print("\nOrthogonality between L0 and L5 (should be close to 0.5):")
+            # print(np.trace(new_targets[0] @ new_targets[5]))
+            # print("\nIs hermitian:")
+            # for nt in new_targets:
+            #     print(np.isclose(np.conj(nt).T, nt).all())
+
         self.encoder.update_targets(new_targets)
         self.decoder.update_targets(new_targets)
         self.update_targets(new_targets)
@@ -165,13 +211,15 @@ class Autocodec:
 
         no_results = True
         while no_results:
-            self.decoder.apply_loss().optimize(maxEval=pre_opt[1])
+            self.decoder.apply_loss().optimize(maxEval=pre_opt[1], **kwargs)
             if self.decoder.results["returnCodeMessage"] != "Generic failure":
                 no_results = False
 
         if self.decoder.parameters["verbose"]:
-            print("\nDecoder output:")
+            print("\nDecoder logical 0 pre-opt output:")
             pa(self.decoder.get_output()[0])
+            print("\nDecoder logical 1 pre-opt output:")
+            pa(self.decoder.get_output()[1])
             print("\n\n")
 
         # # Set back verbose to the prior value stated in the encoder/decoder
@@ -181,7 +229,7 @@ class Autocodec:
         #     self.encoder.parameters["print_every"] = print_every_en
         #     self.decoder.parameters["print_every"] = print_every_de
 
-    def optimize(self, epochs, pre_opt=False, **kwargs):
+    def optimize(self, epochs, pre_opt=False, random_targets=True, decoder_first=False, **kwargs):
         """ Optimize the autocodec system
 
         Alternating between keeping the encoder and the decoder fixed.
@@ -192,43 +240,97 @@ class Autocodec:
             encoder/decoder (True) or not (False), or, if tuple, how many
             evaluations to evaluate the (encoder, decoder).
         """
-        # NOTE: Has NOT been tested... especially not if pre_opt is False
-        have_results = bool(self.encoder.results and self.decoder.results)
-        if pre_opt:
-            self.pre_optimize(pre_opt)
-        else:
+        # have_results = bool(self.encoder.results and self.decoder.results)
+        if random_targets:
             self.encoder.build_rhos()
             self.decoder.build_rhos()
 
-            rand_pure = []
-            random_targets = []
-            rho_len = len(self.encoder.encoding.rhos_targets[0])
-            rand_1 = np.random.random((rho_len, 1)) + 1j * np.random.random((rho_len, 1))
-            rand_2 = np.random.random((rho_len, 1)) + 1j * np.random.random((rho_len, 1))
-            rand_pure.append(rand_1)
-            rand_pure.append(rand_2)
-            rand_pure.append((rand_1 + rand_2) / np.sqrt(2))
-            rand_pure.append((rand_1 - rand_2) / np.sqrt(2))
-            rand_pure.append((rand_1 + 1j * rand_2) / np.sqrt(2))
-            rand_pure.append((rand_1 - 1j * rand_2) / np.sqrt(2))
+            new_targets = u.generate_orth(2, dim=len(self.encoder.encoding.rhos_targets[0]))
 
-            for rp in rand_pure:
-                rand_mat = rp @ np.conj(rp).T
-                rand_rho = rand_mat / np.trace(rand_mat)
-
-                random_targets.append(rand_rho)
             if self.encoder.parameters["verbose"]:
                 print("\nLogical 0 start target:")
-                pa(random_targets[0])
+                pa(new_targets[0])
                 print("\nLogical 1 start target:")
-                pa(random_targets[1])
+                pa(new_targets[1])
 
-            self.encoder.update_targets(random_targets)
-            self.decoder.update_targets(random_targets)
+                # print("\nTrace of logical 0:")
+                # print(np.trace(new_targets[0]))
+                # print("\nTrace of logical 1:")
+                # print(np.trace(new_targets[1]))
+                # print("\nOrthogonality between L0 and L1 (should be 0):")
+                # print(np.trace(new_targets[0] @ new_targets[1]))
+                # print("\nOrthogonality between L2 and L3 (should be close to 0):")
+                # print(np.trace(new_targets[2] @ new_targets[3]))
+                # print("\nOrthogonality between L4 and L5 (should be close to 0):")
+                # print(np.trace(new_targets[4] @ new_targets[5]))
+
+                # print("\nOrthogonality between L1 and L2 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[2]))
+                # print("\nOrthogonality between L3 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[3] @ new_targets[4]))
+                # print("\nOrthogonality between L0 and L2 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[2]))
+                # print("\nOrthogonality between L1 and L3 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[3]))
+                # print("\nOrthogonality between L2 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[2] @ new_targets[4]))
+                # print("\nOrthogonality between L3 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[3] @ new_targets[5]))
+                # print("\nOrthogonality between L0 and L3 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[3]))
+                # print("\nOrthogonality between L1 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[4]))
+                # print("\nOrthogonality between L2 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[2] @ new_targets[5]))
+                # print("\nOrthogonality between L0 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[4]))
+                # print("\nOrthogonality between L1 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[5]))
+                # print("\nOrthogonality between L0 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[5]))
+                # print("\nIs hermitian:")
+                # for nt in new_targets:
+                #     print(np.isclose(np.conj(nt).T, nt).all())
+
+            self.encoder.update_targets(new_targets)
+            self.decoder.update_targets(new_targets)
             self.encoding.update_targets(np.copy(self.encoder.encoding.rhos_targets))
             self.encoding.rhos_inputs = np.copy(self.encoder.encoding.rhos_inputs)
 
-        if self.save_data and not have_results:
+            if pre_opt:
+                self.pre_optimize(pre_opt, random_targets, **kwargs)
+        else:
+            if pre_opt:
+                self.pre_optimize(pre_opt, random_targets, **kwargs)
+            else:
+                self.encoder.build_rhos()
+                self.decoder.build_rhos().apply_loss()
+                self.encoding.update_targets(np.copy(self.encoder.encoding.rhos_targets))
+                self.encoding.rhos_inputs = np.copy(self.encoder.encoding.rhos_inputs)
+
+                self.quiet(self.encoder.optimize)(maxEval=1)
+                self.quiet(self.decoder.optimize)(maxEval=1)
+
+        if "guess_en" in kwargs:
+            # Add provided guess into results for encoder
+            self.encoder.results["bestX"] = kwargs["guess_en"]
+
+            # Update targets for autocodec, encoder and decoder
+            new_targets = self.encoder.get_output()
+            self.encoding.update_targets(new_targets)
+            self.encoder.encoding.update_targets(new_targets)
+            self.decoder.encoding.update_targets(new_targets)
+            self.decoder.apply_loss()
+
+            pa(self.encoder.get_output()[0])
+            pa(self.encoder.get_output()[1])
+        if "guess_de" in kwargs:
+            # Add provided guess into results for decoder
+            self.decoder.results["bestX"] = kwargs["guess_de"]
+            pa(self.decoder.get_output()[0])
+            pa(self.decoder.get_output()[1])
+
+        if self.save_data:  # and not have_results:
             self.pre_save()
 
         self.epochs = epochs
@@ -241,35 +343,82 @@ class Autocodec:
             print("###########################")
             print("###########################\n")
 
-            print("\n----------------------")
-            print("| Optimizing encoder |")
-            print("----------------------\n")
-            # Optimize the full system with the decoder locked (i.e. only optimize
-            # the encoder part of the system).
+            if not decoder_first or i != 0:
+                print("\n----------------------")
+                print("| Optimizing encoder |")
+                print("----------------------\n")
+                # Optimize the full system with the decoder locked (i.e. only optimize
+                # the encoder part of the system).
 
-            if pre_opt or i != 0:
-                guess_en = self.encoder.results["bestX"]
-            else:
-                guess_en = None
+                # if pre_opt or i != 0:
+                if "guess_en" in kwargs and i == 0:
+                    guess_en = kwargs["guess_en"]
+                    print("Using provided guess")
+                else:
+                    try:
+                        guess_en = self.encoder.results["bestX"]
+                        # print("len guess en", len(guess_en))
+                    except KeyError:
+                        guess_en = None
 
-            results_en = opt(
-                self.encoding,
-                system_list=[self.encoder, self.decoder],
-                systems_to_optimize=[True, False],
-                guess=guess_en,
-                **kwargs,
-                )
+                results_en = opt(
+                    self.encoding,
+                    system_list=[self.encoder, self.decoder],
+                    systems_to_optimize=[True, False],
+                    guess=guess_en,
+                    **kwargs,
+                    )
 
-            if results_en["returnCodeMessage"] != "Generic failure":
-                self.encoder.results = results_en
+                if results_en["returnCodeMessage"] != "Generic failure":
+                    self.encoder.results = results_en
 
-            # Build the output from the prior optimization and use as new targets
-            # for both the decoder and the next encoder optimization
-            new_targets = self.encoder.get_output()
-            self.encoding.update_targets(new_targets)
+                # Build the output from the prior optimization and use as new targets
+                # for both the decoder and the next encoder optimization
+                new_targets = self.encoder.get_output()
 
-            print("Encoder output => New targets")
-            pa(new_targets[0])
+                print("\nTrace of logical 0:")
+                print(np.trace(new_targets[0]))
+                print("\nTrace of logical 1:")
+                print(np.trace(new_targets[1]))
+                print("\nOrthogonality between L0 and L1 (should be 0):")
+                print(np.trace(new_targets[0] @ new_targets[1]))
+                print("\nOrthogonality between L2 and L3 (should be close to 0):")
+                print(np.trace(new_targets[2] @ new_targets[3]))
+                print("\nOrthogonality between L4 and L5 (should be close to 0):")
+                print(np.trace(new_targets[4] @ new_targets[5]))
+
+                # print("\nOrthogonality between L1 and L2 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[2]))
+                # print("\nOrthogonality between L3 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[3] @ new_targets[4]))
+                # print("\nOrthogonality between L0 and L2 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[2]))
+                # print("\nOrthogonality between L1 and L3 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[3]))
+                # print("\nOrthogonality between L2 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[2] @ new_targets[4]))
+                # print("\nOrthogonality between L3 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[3] @ new_targets[5]))
+                # print("\nOrthogonality between L0 and L3 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[3]))
+                # print("\nOrthogonality between L1 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[4]))
+                # print("\nOrthogonality between L2 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[2] @ new_targets[5]))
+                # print("\nOrthogonality between L0 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[4]))
+                # print("\nOrthogonality between L1 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[5]))
+                # print("\nOrthogonality between L0 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[5]))
+                # print("\nIs hermitian:")
+                # for nt in new_targets:
+                #     print(np.isclose(np.conj(nt).T, nt).all())
+
+                self.encoding.update_targets(new_targets)
+
+                print("\nEncoder output => New targets")
+                pa(new_targets[0])
 
             print("\n----------------------")
             print("| Optimizing decoder |")
@@ -277,10 +426,16 @@ class Autocodec:
             # Optimize the full system with the encoder locked (i.e. only optimize
             # the decoder part of the system).
 
-            if pre_opt or i != 0:
-                guess_de = self.decoder.results["bestX"]
+            # if pre_opt or i != 0:
+            if "guess_de" in kwargs and i == 0:
+                guess_de = kwargs["guess_de"]
+                print("Using provided guess")
             else:
-                guess_de = None
+                try:
+                    guess_de = self.decoder.results["bestX"]
+                    # print("len guess de", len(guess_de))
+                except KeyError:
+                    guess_de = None
 
             results_de = opt(
                 self.encoding,
@@ -291,6 +446,19 @@ class Autocodec:
                 )
             if results_de["returnCodeMessage"] != "Generic failure":
                 self.decoder.results = results_de
+                # # NOTE: Bumps the targets in a random direction
+                # # with strength depending on decoder results
+                # for i, nt in enumerate(new_targets):
+                #     new_vec = (
+                #         2 * np.random.random((1, new_targets.shape[0])) - 1
+                #         + (2 * np.random.random((1, new_targets.shape[0])) - 1) * 1j
+                #         )
+                #     new_targets[i] = (
+                #         nt + (np.conj(new_vec.T) @ new_vec)
+                #         * results_de["bestError"]
+                #         )
+                #     new_targets = new_targets / np.trace(new_targets)
+                self.encoding.update_targets(new_targets)
 
             if self.save_data:
                 save_path = self.data_folder / f"epoch{i:03d}"
@@ -304,6 +472,124 @@ class Autocodec:
 
         return self
 
+    def full_opt(self, pre_opt=False, random_targets=True, **kwargs):
+        if random_targets:
+            self.encoder.build_rhos()
+            self.decoder.build_rhos()
+
+            new_targets = u.generate_orth(2, dim=len(self.encoder.encoding.rhos_targets[0]))
+
+            if self.encoder.parameters["verbose"]:
+                print("\nLogical 0 start target:")
+                pa(new_targets[0])
+                print("\nLogical 1 start target:")
+                pa(new_targets[1])
+
+                # print("\nTrace of logical 0:")
+                # print(np.trace(new_targets[0]))
+                # print("\nTrace of logical 1:")
+                # print(np.trace(new_targets[1]))
+                # print("\nOrthogonality between L0 and L1 (should be 0):")
+                # print(np.trace(new_targets[0] @ new_targets[1]))
+                # print("\nOrthogonality between L2 and L3 (should be close to 0):")
+                # print(np.trace(new_targets[2] @ new_targets[3]))
+                # print("\nOrthogonality between L4 and L5 (should be close to 0):")
+                # print(np.trace(new_targets[4] @ new_targets[5]))
+
+                # print("\nOrthogonality between L1 and L2 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[2]))
+                # print("\nOrthogonality between L3 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[3] @ new_targets[4]))
+                # print("\nOrthogonality between L0 and L2 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[2]))
+                # print("\nOrthogonality between L1 and L3 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[3]))
+                # print("\nOrthogonality between L2 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[2] @ new_targets[4]))
+                # print("\nOrthogonality between L3 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[3] @ new_targets[5]))
+                # print("\nOrthogonality between L0 and L3 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[3]))
+                # print("\nOrthogonality between L1 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[4]))
+                # print("\nOrthogonality between L2 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[2] @ new_targets[5]))
+                # print("\nOrthogonality between L0 and L4 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[4]))
+                # print("\nOrthogonality between L1 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[1] @ new_targets[5]))
+                # print("\nOrthogonality between L0 and L5 (should be close to 0.5):")
+                # print(np.trace(new_targets[0] @ new_targets[5]))
+                # print("\nIs hermitian:")
+                # for nt in new_targets:
+                #     print(np.isclose(np.conj(nt).T, nt).all())
+
+            self.encoder.update_targets(new_targets)
+            self.decoder.update_targets(new_targets)
+            self.encoding.update_targets(np.copy(self.encoder.encoding.rhos_targets))
+            self.encoding.rhos_inputs = np.copy(self.encoder.encoding.rhos_inputs)
+
+            if pre_opt:
+                self.pre_optimize(pre_opt, random_targets, **kwargs)
+        else:
+            if pre_opt:
+                self.pre_optimize(pre_opt, random_targets, **kwargs)
+            else:
+                self.encoder.build_rhos()
+                self.decoder.build_rhos().apply_loss()
+                self.encoding.update_targets(np.copy(self.encoder.encoding.rhos_targets))
+                self.encoding.rhos_inputs = np.copy(self.encoder.encoding.rhos_inputs)
+
+                self.quiet(self.encoder.optimize)(maxEval=1)
+                self.quiet(self.decoder.optimize)(maxEval=1)
+
+        if "guess_en" in kwargs:
+            # Add provided guess into results for encoder
+            self.encoder.results["bestX"] = kwargs["guess_en"]
+
+            # Update targets for autocodec, encoder and decoder
+            new_targets = self.encoder.get_output()
+            self.encoding.update_targets(new_targets)
+            self.encoder.encoding.update_targets(new_targets)
+            self.decoder.encoding.update_targets(new_targets)
+            self.decoder.apply_loss()
+
+            pa(self.encoder.get_output()[0])
+            pa(self.encoder.get_output()[1])
+        if "guess_de" in kwargs:
+            # Add provided guess into results for decoder
+            self.decoder.results["bestX"] = kwargs["guess_de"]
+            pa(self.decoder.get_output()[0])
+            pa(self.decoder.get_output()[1])
+
+        if self.save_data:
+            self.pre_save()
+
+        results = opt(
+            self.encoding,
+            system_list=[self.encoder, self.decoder],
+            systems_to_optimize=[True, True],
+            guess=np.concatenate((kwargs["guess_en"], kwargs["guess_de"])),
+            **kwargs,
+            )
+
+        new_targets = self.encoder.get_output(results["bestX"][:len(kwargs["guess_en"])])
+        self.encoding.update_targets(new_targets)
+
+        pa(new_targets[0])
+        pa(new_targets[1])
+
+        if self.save_data:
+            save_path = self.data_folder / f"full_opt"
+            save_path_old = self.data_folder / f"full_opt (old)"
+            if save_path.exists():
+                if save_path_old.exists():
+                    u.remove(save_path_old)
+                save_path.rename(save_path_old)
+            u.save_dict(save_path, results, suppress_warning=True)
+
+        return self
+
     def output_error(self):
         cost = build_cost(
             self.encoder.encoding,
@@ -312,3 +598,23 @@ class Autocodec:
             )
 
         print(cost(None))
+
+    def quiet(self, func):
+        def shhh(**kwargs):
+            verb_en = self.encoder.parameters["verbose"]
+            verb_de = self.decoder.parameters["verbose"]
+            print_every_en = self.encoder.parameters["print_every"]
+            print_every_de = self.decoder.parameters["print_every"]
+
+            self.encoder.parameters["verbose"] = False
+            self.decoder.parameters["verbose"] = False
+            self.encoder.parameters["print_every"] = None
+            self.decoder.parameters["print_every"] = None
+
+            func(**kwargs)
+
+            self.encoder.parameters["verbose"] = verb_en
+            self.decoder.parameters["verbose"] = verb_de
+            self.encoder.parameters["print_every"] = print_every_en
+            self.decoder.parameters["print_every"] = print_every_de
+        return shhh
